@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
-# ── JUCE 8 ────────────────────────────────────────────────────────────────────
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -14,7 +13,6 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-# ── SoundTouch ────────────────────────────────────────────────────────────────
 FetchContent_Declare(
     SoundTouch
     GIT_REPOSITORY https://codeberg.org/soundtouch/soundtouch.git
@@ -22,23 +20,9 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(JUCE SoundTouch)
+FetchContent_MakeAvailable(JUCE)
+FetchContent_Populate(SoundTouch)
 
-# SoundTouch source files (we compile them directly — no cmake needed)
-set(SOUNDTOUCH_SOURCES
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/AAFilter.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIFOSampleBuffer.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIRFilter.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/cpu_detect_x86.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateCubic.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateLinear.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateShannon.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/RateTransposer.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/SoundTouch.cpp
-    ${soundtouch_SOURCE_DIR}/source/SoundTouch/TDStretch.cpp
-)
-
-# ── Plugin target ─────────────────────────────────────────────────────────────
 juce_add_plugin(VoxTuneAutotune
     COMPANY_NAME                "VoxTune"
     COMPANY_WEBSITE             "https://vox-tune.com"
@@ -61,7 +45,16 @@ target_sources(VoxTuneAutotune
         Source/PluginEditor.cpp
         Source/DSP/PitchDetector.cpp
         Source/DSP/ScaleEngine.cpp
-        ${SOUNDTOUCH_SOURCES}
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/AAFilter.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIFOSampleBuffer.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIRFilter.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/cpu_detect_x86.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateCubic.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateLinear.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateShannon.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/RateTransposer.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/SoundTouch.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/TDStretch.cpp
 )
 
 target_include_directories(VoxTuneAutotune
