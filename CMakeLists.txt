@@ -48,6 +48,7 @@ target_sources(VoxTuneAutotune
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/AAFilter.cpp
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIFOSampleBuffer.cpp
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIRFilter.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIRFilterSSE.cpp
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/cpu_detect_x86.cpp
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateCubic.cpp
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateLinear.cpp
@@ -55,12 +56,14 @@ target_sources(VoxTuneAutotune
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/RateTransposer.cpp
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/SoundTouch.cpp
         ${soundtouch_SOURCE_DIR}/source/SoundTouch/TDStretch.cpp
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch/TDStretchSSE.cpp
 )
 
 target_include_directories(VoxTuneAutotune
     PRIVATE
         Source
         ${soundtouch_SOURCE_DIR}/include
+        ${soundtouch_SOURCE_DIR}/source/SoundTouch
 )
 
 target_compile_definitions(VoxTuneAutotune
