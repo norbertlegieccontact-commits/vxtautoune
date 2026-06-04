@@ -20,7 +20,7 @@ juce_add_plugin(VoxTuneAutotune
     COMPANY_WEBSITE             "https://vox-tune.com"
     PLUGIN_MANUFACTURER_CODE    Vxtn
     PLUGIN_CODE                 Vtat
-    FORMATS                     VST3 Standalone
+    FORMATS                     VST3 AU Standalone
     PRODUCT_NAME                "VoxTune Autotune"
     DESCRIPTION                 "Premium real-time pitch correction by VoxTune"
     IS_SYNTH                    FALSE
