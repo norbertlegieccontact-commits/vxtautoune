@@ -1,0 +1,71 @@
+name: Build VoxTune Autotune
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # WINDOWS BUILD → .vst3
+  # ──────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows VST3
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-windows-8.0.4
+          restore-keys: juce-windows-
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxTuneAutotune-Windows-VST3
+          path: build/VoxTuneAutotune_artefacts/Release/VST3/
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # macOS BUILD → .vst3
+  # ──────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: macOS VST3
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-macos-8.0.4
+          restore-keys: juce-macos-
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxTuneAutotune-macOS-VST3
+          path: build/VoxTuneAutotune_artefacts/Release/VST3/
+          if-no-files-found: error
