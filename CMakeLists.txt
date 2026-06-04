@@ -4,15 +4,39 @@ project(VoxTuneAutotune VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ── Auto-download JUCE 8 (no manual install needed) ──────────────────────────
 include(FetchContent)
+
+# ── JUCE 8 ────────────────────────────────────────────────────────────────────
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
     GIT_TAG        8.0.4
     GIT_SHALLOW    TRUE
 )
-FetchContent_MakeAvailable(JUCE)
+
+# ── SoundTouch ────────────────────────────────────────────────────────────────
+FetchContent_Declare(
+    SoundTouch
+    GIT_REPOSITORY https://codeberg.org/soundtouch/soundtouch.git
+    GIT_TAG        2.3.3
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(JUCE SoundTouch)
+
+# SoundTouch source files (we compile them directly — no cmake needed)
+set(SOUNDTOUCH_SOURCES
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/AAFilter.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIFOSampleBuffer.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/FIRFilter.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/cpu_detect_x86.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateCubic.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateLinear.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/InterpolateShannon.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/RateTransposer.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/SoundTouch.cpp
+    ${soundtouch_SOURCE_DIR}/source/SoundTouch/TDStretch.cpp
+)
 
 # ── Plugin target ─────────────────────────────────────────────────────────────
 juce_add_plugin(VoxTuneAutotune
@@ -22,7 +46,6 @@ juce_add_plugin(VoxTuneAutotune
     PLUGIN_CODE                 Vtat
     FORMATS                     VST3 AU Standalone
     PRODUCT_NAME                "VoxTune Autotune"
-    DESCRIPTION                 "Premium real-time pitch correction by VoxTune"
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE
     NEEDS_MIDI_OUTPUT           FALSE
@@ -32,19 +55,21 @@ juce_add_plugin(VoxTuneAutotune
     COPY_PLUGIN_AFTER_BUILD     FALSE
 )
 
-# ── Source files ──────────────────────────────────────────────────────────────
 target_sources(VoxTuneAutotune
     PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/DSP/PitchDetector.cpp
-        Source/DSP/PitchShifter.cpp
         Source/DSP/ScaleEngine.cpp
+        ${SOUNDTOUCH_SOURCES}
 )
 
-target_include_directories(VoxTuneAutotune PRIVATE Source)
+target_include_directories(VoxTuneAutotune
+    PRIVATE
+        Source
+        ${soundtouch_SOURCE_DIR}/include
+)
 
-# ── Compile definitions ───────────────────────────────────────────────────────
 target_compile_definitions(VoxTuneAutotune
     PUBLIC
         JUCE_WEB_BROWSER=0
@@ -53,7 +78,6 @@ target_compile_definitions(VoxTuneAutotune
         JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
-# ── Link libraries ────────────────────────────────────────────────────────────
 target_link_libraries(VoxTuneAutotune
     PRIVATE
         juce::juce_audio_utils

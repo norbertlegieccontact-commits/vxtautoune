@@ -2,52 +2,41 @@
 #include "PluginEditor.h"
 #include <cmath>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Parameter layout
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Parameters ────────────────────────────────────────────────────────────────
 juce::AudioProcessorValueTreeState::ParameterLayout
 VoxTuneProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    // Retune speed: 0 = robot (instant), 100 = natural (slow)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("speed", 1), "Speed",
+        juce::ParameterID("speed",    1), "Speed",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f));
 
-    // Humanize: random pitch variation like a real singer
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("humanize", 1), "Humanize",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 20.0f));
 
-    // Wet/dry mix
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("mix", 1), "Mix",
+        juce::ParameterID("mix",      1), "Mix",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
 
-    // Key: 0=C, 1=C#, ..., 11=B
     params.push_back(std::make_unique<juce::AudioParameterInt>(
-        juce::ParameterID("key", 1), "Key", 0, 11, 9));  // default A
+        juce::ParameterID("key",      1), "Key",   0, 11, 9));
 
-    // Scale: 0=Chromatic, 1=Major, 2=Minor, 3=Pentatonic, 4=Blues, 5=Dorian
     params.push_back(std::make_unique<juce::AudioParameterInt>(
-        juce::ParameterID("scale", 1), "Scale", 0, 5, 1));  // default Major
+        juce::ParameterID("scale",    1), "Scale", 0,  5, 1));
 
-    // Bypass
     params.push_back(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID("bypass", 1), "Bypass", false));
+        juce::ParameterID("bypass",   1), "Bypass", false));
 
-    // Pitch shift (semitones, formant section)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("pitchShift", 1), "Pitch Shift",
         juce::NormalisableRange<float>(-12.0f, 12.0f, 0.01f), 0.0f));
 
-    // Formant shift (semitones)
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("formant", 1), "Formant",
+        juce::ParameterID("formant",  1), "Formant",
         juce::NormalisableRange<float>(-12.0f, 12.0f, 0.01f), 0.0f));
 
-    // Formant mix
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("formantMix", 1), "Formant Mix",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
@@ -55,7 +44,7 @@ VoxTuneProcessor::createParameterLayout()
     return { params.begin(), params.end() };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Constructor ───────────────────────────────────────────────────────────────
 VoxTuneProcessor::VoxTuneProcessor()
     : AudioProcessor(BusesProperties()
         .withInput ("Input",  juce::AudioChannelSet::stereo(), true)
@@ -66,102 +55,136 @@ VoxTuneProcessor::VoxTuneProcessor()
 
 VoxTuneProcessor::~VoxTuneProcessor() {}
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Prepare ───────────────────────────────────────────────────────────────────
 void VoxTuneProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
+    currentBlockSize  = samplesPerBlock;
+
     pitchDetector.prepare(sampleRate);
-    pitchShifter.prepare(sampleRate, samplesPerBlock);
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        st[ch].setSampleRate((uint)sampleRate);
+        st[ch].setChannels(1);
+        st[ch].setPitchSemiTones(0.0f);
+        // Key settings for natural sound
+        st[ch].setSetting(SETTING_USE_AA_FILTER,       1);
+        st[ch].setSetting(SETTING_AA_FILTER_LENGTH,    64);
+        st[ch].setSetting(SETTING_USE_QUICKSEEK,       0);
+        st[ch].setSetting(SETTING_SEQUENCE_MS,         40);
+        st[ch].setSetting(SETTING_SEEKWINDOW_MS,       15);
+        st[ch].setSetting(SETTING_OVERLAP_MS,          8);
+        st[ch].clear();
+    }
+
+    monoIn.resize(samplesPerBlock * 4, 0.0f);
+    stOut .resize(samplesPerBlock * 4, 0.0f);
+
+    currentPitchRatio = 1.0f;
 }
 
 void VoxTuneProcessor::releaseResources()
 {
+    for (auto& s : st) s.clear();
     pitchDetector.reset();
-    pitchShifter.reset();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main audio processing
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Process ───────────────────────────────────────────────────────────────────
 void VoxTuneProcessor::processBlock(juce::AudioBuffer<float>& buffer,
-                                     juce::MidiBuffer& /*midi*/)
+                                     juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    const int totalChannels = getTotalNumInputChannels();
-    const int numSamples    = buffer.getNumSamples();
+    const int numSamples  = buffer.getNumSamples();
+    const int numChannels = juce::jmin(buffer.getNumChannels(), 2);
 
     // ── Read parameters ───────────────────────────────────────────────────
-    const bool  bypassed   = *apvts.getRawParameterValue("bypass")    > 0.5f;
+    const bool  bypassed   = *apvts.getRawParameterValue("bypass")     > 0.5f;
     const float speed      = *apvts.getRawParameterValue("speed");
     const float humanize   = *apvts.getRawParameterValue("humanize");
-    const float mix        = *apvts.getRawParameterValue("mix")       / 100.0f;
+    const float mix        = *apvts.getRawParameterValue("mix")        / 100.0f;
     const int   keyIdx     = (int)*apvts.getRawParameterValue("key");
     const int   scaleIdx   = (int)*apvts.getRawParameterValue("scale");
     const float pitchShift = *apvts.getRawParameterValue("pitchShift");
 
-    // If bypassed, pass audio through unchanged
-    if (bypassed)
-    {
-        inputLevel  = 0.0f;
-        outputLevel = 0.0f;
-        return;
-    }
+    if (bypassed) { inputLevel = 0.0f; outputLevel = 0.0f; return; }
 
-    // ── Use channel 0 for pitch detection, then process all channels ──────
-    float* ch0 = buffer.getWritePointer(0);
-
-    // Input level (for meter)
+    // ── Input level ───────────────────────────────────────────────────────
     float inRMS = 0.0f;
+    const float* ch0 = buffer.getReadPointer(0);
     for (int i = 0; i < numSamples; ++i) inRMS += ch0[i] * ch0[i];
     inputLevel = std::sqrt(inRMS / numSamples);
 
-    // ── Pitch detection ───────────────────────────────────────────────────
+    // ── Pitch detection (channel 0) ───────────────────────────────────────
     float detected = pitchDetector.process(ch0, numSamples);
     detectedFreq   = detected;
 
-    // ── Scale snapping ────────────────────────────────────────────────────
-    float target = ScaleEngine::getTargetFreq(detected, keyIdx, scaleIdx);
-    targetFreq   = target;
+    // ── Scale snap → target semitone offset ──────────────────────────────
+    float semitonesNeeded = 0.0f;
 
-    if (detected > 0)
+    if (detected > 0.0f)
     {
-        float midiDet = ScaleEngine::freqToMidi(detected);
-        detectedNote = (int)std::round(midiDet) % 12;
-        if (detectedNote < 0) detectedNote.store(detectedNote + 12);
+        float target = ScaleEngine::getTargetFreq(detected, keyIdx, scaleIdx);
+        if (target > 0.0f)
+        {
+            // Convert ratio to semitones
+            float rawSemitones = 12.0f * std::log2(target / detected);
+
+            // Retune speed: smooth the semitone correction
+            // speed=0 → instant (robot), speed=100 → very slow (natural ~300ms)
+            float msTarget = 8.0f + speed * 2.92f;
+            float tc       = msTarget * 0.001f * (float)currentSampleRate;
+            float alpha    = 1.0f - std::exp(-(float)numSamples / tc);
+
+            semitonesNeeded += alpha * (rawSemitones - semitonesNeeded);
+        }
     }
-    else
+
+    // Manual pitch shift from formant section
+    semitonesNeeded += pitchShift;
+
+    // Humanize: subtle random vibrato
+    if (humanize > 0.0f)
     {
-        detectedNote = -1;
+        static float hPhase = 0.0f;
+        hPhase += (float)numSamples * 5.5f / (float)currentSampleRate;
+        float wobble = humanize / 100.0f * 0.18f * std::sin(hPhase);
+        semitonesNeeded += wobble;
     }
 
-    // ── Calculate pitch ratio ─────────────────────────────────────────────
-    float pitchRatio = 1.0f;
-    if (detected > 0.0f && target > 0.0f)
-        pitchRatio = target / detected;
+    // ── Set SoundTouch pitch ──────────────────────────────────────────────
+    for (int ch = 0; ch < numChannels; ++ch)
+        st[ch].setPitchSemiTones(semitonesNeeded);
 
-    // Additional manual pitch shift from formant section
-    if (std::abs(pitchShift) > 0.001f)
-        pitchRatio *= std::pow(2.0f, pitchShift / 12.0f);
-
-    // Clamp to safe range
-    pitchRatio = juce::jlimit(0.5f, 2.0f, pitchRatio);
-
-    // ── Process each channel ──────────────────────────────────────────────
-    // Create a dry copy for mix blending
+    // ── Process each channel through SoundTouch ───────────────────────────
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    for (int ch = 0; ch < totalChannels; ++ch)
+    for (int ch = 0; ch < numChannels; ++ch)
     {
-        pitchShifter.processMono(buffer.getWritePointer(ch), numSamples,
-                                  pitchRatio, speed, humanize);
+        const float* input  = buffer.getReadPointer(ch);
+        float*       output = buffer.getWritePointer(ch);
+
+        // Feed samples into SoundTouch
+        st[ch].putSamples(input, (uint)numSamples);
+
+        // Receive processed samples
+        int received = (int)st[ch].receiveSamples(stOut.data(), (uint)numSamples);
+
+        if (received > 0)
+        {
+            // Copy output — pad with zeros if SoundTouch returned fewer samples
+            for (int i = 0; i < numSamples; ++i)
+                output[i] = (i < received) ? stOut[i] : 0.0f;
+        }
+        // If no output yet (pipeline filling), keep dry signal
     }
 
-    // ── Wet/dry blend ─────────────────────────────────────────────────────
+    // ── Wet/dry mix ───────────────────────────────────────────────────────
     if (mix < 0.9999f)
     {
-        for (int ch = 0; ch < totalChannels; ++ch)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
             auto* wet = buffer.getWritePointer(ch);
             auto* dry = dryBuffer.getReadPointer(ch);
@@ -170,13 +193,14 @@ void VoxTuneProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         }
     }
 
-    // Output level (for meter)
+    // ── Output level ──────────────────────────────────────────────────────
     float outRMS = 0.0f;
-    for (int i = 0; i < numSamples; ++i) outRMS += ch0[i] * ch0[i];
+    const float* out0 = buffer.getReadPointer(0);
+    for (int i = 0; i < numSamples; ++i) outRMS += out0[i] * out0[i];
     outputLevel = std::sqrt(outRMS / numSamples);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Editor ────────────────────────────────────────────────────────────────────
 juce::AudioProcessorEditor* VoxTuneProcessor::createEditor()
 {
     return new VoxTuneEditor(*this);
@@ -184,13 +208,10 @@ juce::AudioProcessorEditor* VoxTuneProcessor::createEditor()
 
 juce::String VoxTuneProcessor::getDetectedNoteName() const
 {
-    float f = detectedFreq.load();
-    return juce::String(ScaleEngine::noteName(f).c_str());
+    return juce::String(ScaleEngine::noteName(detectedFreq.load()).c_str());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// State save / load
-// ─────────────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 void VoxTuneProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
@@ -205,9 +226,6 @@ void VoxTuneProcessor::setStateInformation(const void* data, int sizeInBytes)
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Plugin entry point
-// ─────────────────────────────────────────────────────────────────────────────
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new VoxTuneProcessor();
