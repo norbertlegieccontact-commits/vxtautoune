@@ -1,53 +1,42 @@
 name: Build VoxTune Autotune
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 jobs:
   build-windows:
     name: Windows VST3
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Cache JUCE
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: build/_deps
-          key: juce-windows-8.0.4
-      - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Upload VST3
-        uses: actions/upload-artifact@v4
+          key: juce-win-8.0.4-st-2.3.3
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --config Release --parallel
+      - uses: actions/upload-artifact@v4
         with:
           name: VoxTuneAutotune-Windows-VST3
           path: build/VoxTuneAutotune_artefacts/Release/VST3/
-
   build-macos:
-    name: macOS VST3 + AU
+    name: macOS arm64
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Cache JUCE
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: build/_deps
-          key: juce-macos-8.0.4
-      - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Upload VST3
-        uses: actions/upload-artifact@v4
-        with:
-          name: VoxTuneAutotune-macOS-VST3
-          path: build/VoxTuneAutotune_artefacts/Release/VST3/
-      - name: Upload AU
-        uses: actions/upload-artifact@v4
+          key: juce-mac-8.0.4-st-2.3.3
+      - run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64"
+      - run: cmake --build build --config Release --parallel
+      - uses: actions/upload-artifact@v4
         with:
           name: VoxTuneAutotune-macOS-AU
           path: build/VoxTuneAutotune_artefacts/Release/AU/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoxTuneAutotune-macOS-VST3
+          path: build/VoxTuneAutotune_artefacts/Release/VST3/
           if-no-files-found: warn
